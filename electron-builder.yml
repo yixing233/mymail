@@ -16,7 +16,6 @@ files:
   - .next/**/*
   - "!.next/cache/**/*"
   - "!.next/dev/**/*"
-  - "!.next/node_modules/**/*"
   - next.config.ts
   - next-env.d.ts
   - package.json
@@ -35,3 +34,5 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+
+npmRebuild: false

@@ -49,6 +49,10 @@ describe("desktop app packaging", () => {
     const packer = readText("scripts/desktop-pack.mjs");
 
     expect(packer).toContain("electron-builder");
+    expect(packer).toContain("materializeNextExternalAliases");
+    expect(packer).toContain("rebuildElectronNativeDeps");
+    expect(packer).toContain("--runtime=electron");
+    expect(packer).toContain("--disturl=https://electronjs.org/headers");
     expect(packer).toContain("rebuild");
     expect(packer).toContain("better-sqlite3");
   });
@@ -61,6 +65,8 @@ describe("desktop app packaging", () => {
     expect(config).toContain("dist-desktop");
     expect(config).toContain("desktop/**/*");
     expect(config).toContain(".next/**/*");
+    expect(config).not.toContain("!.next/node_modules/**/*");
     expect(config).toContain("target: nsis");
+    expect(config).toContain("npmRebuild: false");
   });
 });
