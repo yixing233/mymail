@@ -3,6 +3,7 @@
 
 node_modules/
 .next/
+dist-desktop/
 .playwright-mcp/
 .codex_tmp/
 data/

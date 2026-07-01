@@ -35,6 +35,28 @@ npm run dev
 
 Open [http://localhost:12121](http://localhost:12121).
 
+## Desktop
+
+The desktop build wraps the existing Next.js app with Electron, so API routes, SQLite storage, and provider sync continue to run locally.
+
+### Development
+
+```bash
+npm run desktop:dev
+```
+
+This starts the Next.js dev server on `http://127.0.0.1:12121` and opens the Electron window.
+
+### Production desktop package
+
+```bash
+npm run desktop:pack
+```
+
+Use `npm run desktop:build` to create installer artifacts under `dist-desktop/`.
+
+Desktop data defaults to Electron's user data directory. Override it with `MYMAIL_DATA_DIR` when needed.
+
 ## Docker
 
 ### Development

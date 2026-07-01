@@ -1,0 +1,37 @@
+appId: com.mymail.desktop
+productName: MyMail
+copyright: Copyright © 2026 MyMail
+asar: false
+
+directories:
+  output: dist-desktop
+
+files:
+  - desktop/**/*
+  - app/**/*
+  - components/**/*
+  - lib/**/*
+  - scripts/**/*
+  - docs/**/*
+  - .next/**/*
+  - "!.next/cache/**/*"
+  - "!.next/dev/**/*"
+  - "!.next/node_modules/**/*"
+  - next.config.ts
+  - next-env.d.ts
+  - package.json
+  - package-lock.json
+  - postcss.config.mjs
+  - tsconfig.json
+  - mymail-icon.png
+
+win:
+  icon: mymail-icon.png
+  target: nsis
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
