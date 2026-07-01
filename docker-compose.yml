@@ -1,0 +1,33 @@
+services:
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    env_file:
+      - .env
+    environment:
+      MYMAIL_DATA_DIR: /app/data
+    ports:
+      - "${MYMAIL_DEV_PORT:-12121}:12121"
+    volumes:
+      - .:/app
+      - mymail-node-modules:/app/node_modules
+      - mymail-data:/app/data
+
+  app-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      MYMAIL_DATA_DIR: /app/data
+    ports:
+      - "${MYMAIL_PROD_PORT:-12121}:12121"
+    volumes:
+      - mymail-data:/app/data
+
+volumes:
+  mymail-node-modules:
+  mymail-data:

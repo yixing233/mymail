@@ -1,0 +1,12 @@
+node_modules
+.next
+.codex_tmp
+build.log
+build-check.log
+notification-build.log
+next-start.out.log
+next-start.err.log
+npm-debug.log
+data/*.db
+data/*.db-shm
+data/*.db-wal

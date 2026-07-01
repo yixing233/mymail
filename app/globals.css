@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #eef3f7;
+  --panel: rgba(255, 255, 255, 0.86);
+  --panel-strong: #ffffff;
+  --panel-ink: #0f172a;
+  --muted: #526075;
+  --border: rgba(148, 163, 184, 0.22);
+  --shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+  --gmail: #ef4444;
+  --outlook: #2563eb;
+  --qq: #0ea5e9;
+  --mail163: #f97316;
+  --ok: #16a34a;
+  --warn: #f59e0b;
+  --error: #dc2626;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 26%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.18), transparent 24%),
+    linear-gradient(180deg, #f7fafc 0%, var(--bg) 100%);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--panel-ink);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-touch-callout: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(15, 23, 42, 0.38);
+  outline-offset: 2px;
+}
+
+.glass {
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 999px;
+}
+
+.scrollbar-gutterless {
+  scrollbar-gutter: stable;
+}
+
+.content-swap {
+  animation: content-swap-in 140ms ease-out;
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    100deg,
+    rgba(226, 232, 240, 0.66) 0%,
+    rgba(248, 250, 252, 0.96) 44%,
+    rgba(226, 232, 240, 0.66) 88%
+  );
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.05s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.dialog-overlay {
+  will-change: opacity, backdrop-filter;
+}
+
+.dialog-overlay-in {
+  animation: dialog-overlay-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dialog-overlay-out {
+  animation: dialog-overlay-out 160ms ease-in both;
+}
+
+.dialog-panel-in {
+  animation: dialog-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+.dialog-panel-out {
+  animation: dialog-panel-out 150ms ease-in both;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-overlay-in,
+  .dialog-overlay-out,
+  .dialog-panel-in,
+  .dialog-panel-out,
+  .content-swap,
+  .skeleton-shimmer {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
+  }
+}
+
+@keyframes content-swap-in {
+  from {
+    opacity: 0.72;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dialog-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+.overflow-wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+

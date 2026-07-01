@@ -1,0 +1,12 @@
+.env*
+!.env.local.example
+
+node_modules/
+.next/
+.playwright-mcp/
+.codex_tmp/
+data/
+
+*.log
+*.tsbuildinfo
+tmp-*.html
