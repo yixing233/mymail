@@ -1172,6 +1172,74 @@ describe("provider sync trash folders", () => {
     expect(detail?.html).toContain("<p>Password fallback body</p>");
   });
 
+  it("uses imported outlook password when oauth token refresh is rejected", async () => {
+    vi.resetModules();
+    const rawMessage = [
+      "From: Sender <sender@example.com>",
+      "Subject: Token rejected password sync",
+      "Date: Fri, 05 Jun 2026 00:00:00 +0000",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>Token rejected body</p>",
+    ].join("\r\n");
+    const passwordClient = {
+      connect: vi.fn(async () => undefined),
+      mailboxOpen: vi.fn(async (mailboxName: string) => ({ exists: mailboxName === "INBOX" ? 1 : 0 })),
+      fetch: vi.fn((range: string) => {
+        async function* items() {
+          if (range === "1:*") {
+            yield {
+              uid: 42,
+              envelope: { from: [{ address: "sender@example.com" }], subject: "Token rejected password sync" },
+              flags: new Set(),
+              internalDate: new Date("2026-06-05T00:00:00.000Z"),
+            };
+          }
+
+          if (range === "42") {
+            yield {
+              uid: 42,
+              source: Buffer.from(rawMessage),
+            };
+          }
+        }
+        return items();
+      }),
+      logout: vi.fn(async () => undefined),
+      close: vi.fn(() => undefined),
+      mailbox: { exists: 1 },
+    };
+    const imapFlowMock = vi.fn().mockImplementation(() => passwordClient);
+
+    vi.doMock("imapflow", () => ({
+      ImapFlow: imapFlowMock,
+    }));
+
+    const providerStore = await import("@/lib/provider-store");
+    const imported = providerStore.upsertImportedOutlookMailbox({
+      account: "user@outlook.com",
+      password: "stored-password",
+      clientId: "client-one",
+      refreshToken: "refresh-one",
+    });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      error: "invalid_grant",
+      error_description: "AADSTS70000: User account is found to be in service abuse mode.",
+    }), { status: 400 }));
+
+    const providerSync = await importProviderSync();
+    const result = await providerSync.refreshProvider("outlook", imported.mailboxId, { limit: 3 });
+
+    expect(result).toEqual({ count: 1 });
+    expect(imapFlowMock).toHaveBeenCalledTimes(1);
+    expect(imapFlowMock.mock.calls[0]?.[0].auth).toMatchObject({
+      user: "user@outlook.com",
+      pass: "stored-password",
+    });
+    const detail = providerStore.getMessageDetail(`${imported.mailboxId}-INBOX-42`);
+    expect(detail?.html).toContain("<p>Token rejected body</p>");
+  });
+
   it("surfaces imap hydrate failures instead of silently succeeding", async () => {
     vi.resetModules();
     const openMock = vi.fn(async () => ({ exists: 1 }));

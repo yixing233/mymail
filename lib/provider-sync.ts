@@ -279,10 +279,16 @@ async function verifyImap(providerId: ProviderId, mailboxId?: string) {
   const payload = getProviderPayload(providerId, mailboxId);
   const password = secrets.authorizationCode || secrets.password;
 
-  const outlookToken =
-    providerId === "outlook" && payload.clientId && secrets.refreshToken
-      ? await refreshOutlookImapAccessToken(payload.clientId, payload.tenantId || "common", secrets)
-      : undefined;
+  let outlookToken: OAuthTokenResponse | undefined;
+  if (providerId === "outlook" && payload.clientId && secrets.refreshToken) {
+    try {
+      outlookToken = await refreshOutlookImapAccessToken(payload.clientId, payload.tenantId || "common", secrets);
+    } catch (error) {
+      if (!password) {
+        throw error;
+      }
+    }
+  }
   const accessToken = outlookToken?.access_token;
 
   if (!config.account || !payload.imapHost || !payload.imapPort || (!password && !accessToken)) {
@@ -348,10 +354,16 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
   const payload = getProviderPayload(providerId, mailboxId);
   const password = secrets.authorizationCode || secrets.password;
 
-  const outlookToken =
-    providerId === "outlook" && payload.clientId && secrets.refreshToken
-      ? await refreshOutlookImapAccessToken(payload.clientId, payload.tenantId || "common", secrets)
-      : undefined;
+  let outlookToken: OAuthTokenResponse | undefined;
+  if (providerId === "outlook" && payload.clientId && secrets.refreshToken) {
+    try {
+      outlookToken = await refreshOutlookImapAccessToken(payload.clientId, payload.tenantId || "common", secrets);
+    } catch (error) {
+      if (!password) {
+        throw error;
+      }
+    }
+  }
   const accessToken = outlookToken?.access_token;
 
   if (!config.account || !payload.imapHost || !payload.imapPort || (!password && !accessToken)) {
@@ -1015,10 +1027,16 @@ async function hydrateImapMessageDetail(messageId: string, row: NonNullable<Retu
   const secrets = getProviderSecrets(providerId, row.mailbox_id);
   const payload = getProviderPayload(providerId, row.mailbox_id);
   const password = secrets.authorizationCode || secrets.password;
-  const outlookToken =
-    providerId === "outlook" && payload.clientId && secrets.refreshToken
-      ? await refreshOutlookImapAccessToken(payload.clientId, payload.tenantId || "common", secrets)
-      : undefined;
+  let outlookToken: OAuthTokenResponse | undefined;
+  if (providerId === "outlook" && payload.clientId && secrets.refreshToken) {
+    try {
+      outlookToken = await refreshOutlookImapAccessToken(payload.clientId, payload.tenantId || "common", secrets);
+    } catch (error) {
+      if (!password) {
+        throw error;
+      }
+    }
+  }
   const accessToken = outlookToken?.access_token;
 
   if (!config.account || !payload.imapHost || !payload.imapPort || !row.remote_id || (!password && !accessToken)) {
