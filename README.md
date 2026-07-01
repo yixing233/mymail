@@ -53,6 +53,8 @@ This starts the Next.js dev server on `http://127.0.0.1:12121` and opens the Ele
 npm run desktop:pack
 ```
 
+The unpacked executable is generated at `dist-desktop/win-unpacked/MyMail.exe`.
+
 Use `npm run desktop:build` to create installer artifacts under `dist-desktop/`.
 
 Desktop data defaults to Electron's user data directory. Override it with `MYMAIL_DATA_DIR` when needed.
