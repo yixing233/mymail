@@ -44,6 +44,13 @@ interface OAuthErrorPayload {
 
 const outlookRefreshTokenExpiredMessage = "Outlook refresh token 已失效，请重新授权或重新导入 Outlook 账号";
 
+class OutlookRefreshTokenExpiredError extends Error {
+  constructor(message = outlookRefreshTokenExpiredMessage) {
+    super(message);
+    this.name = "OutlookRefreshTokenExpiredError";
+  }
+}
+
 function formatOAuthErrorMessage(payload: OAuthErrorPayload | null, fallback: string) {
   const details = [payload?.error, payload?.error_description].filter(Boolean).join(": ");
   return details || fallback;
@@ -74,6 +81,42 @@ async function getOutlookRefreshErrorMessage(response: Response, fallback: strin
     return outlookRefreshTokenExpiredMessage;
   }
   return formatOAuthErrorMessage(payload, `${fallback} (${response.status})`);
+}
+
+async function getOutlookRefreshError(response: Response, fallback: string) {
+  const payload = await response.json().catch(() => null) as OAuthErrorPayload | null;
+  if (isOutlookRefreshTokenExpired(payload)) {
+    return new OutlookRefreshTokenExpiredError();
+  }
+  return new Error(formatOAuthErrorMessage(payload, `${fallback} (${response.status})`));
+}
+
+function isOutlookRefreshTokenExpiredError(error: unknown) {
+  return error instanceof OutlookRefreshTokenExpiredError ||
+    (error instanceof Error && error.message === outlookRefreshTokenExpiredMessage);
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function updateOutlookAuthExpiredState(input: {
+  providerId: ProviderId;
+  mailboxId?: string;
+  account?: string;
+  error: unknown;
+}) {
+  const message = errorMessage(input.error, outlookRefreshTokenExpiredMessage);
+  updateProviderConnectionState({
+    providerId: input.providerId,
+    mailboxId: input.mailboxId,
+    account: input.account,
+    status: "reauth",
+    health: "auth_expired",
+    lastSyncedAt: new Date().toISOString(),
+    lastError: message,
+  });
+  return message;
 }
 
 interface GmailProfileResponse {
@@ -317,6 +360,9 @@ async function verifyImap(providerId: ProviderId, mailboxId?: string) {
       outlookToken = await refreshOutlookImapAccessToken(payload.clientId, payload.tenantId || "common", secrets);
     } catch (error) {
       if (!password) {
+        if (isOutlookRefreshTokenExpiredError(error)) {
+          updateOutlookAuthExpiredState({ providerId, mailboxId, account: config.account, error });
+        }
         throw error;
       }
     }
@@ -387,11 +433,16 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
   const password = secrets.authorizationCode || secrets.password;
 
   let outlookToken: OAuthTokenResponse | undefined;
+  let outlookRefreshError: Error | undefined;
   if (providerId === "outlook" && payload.clientId && secrets.refreshToken) {
     try {
       outlookToken = await refreshOutlookImapAccessToken(payload.clientId, payload.tenantId || "common", secrets);
     } catch (error) {
+      outlookRefreshError = error instanceof Error ? error : new Error("Outlook IMAP token refresh failed");
       if (!password) {
+        if (isOutlookRefreshTokenExpiredError(error)) {
+          updateOutlookAuthExpiredState({ providerId, mailboxId, account: config.account, error });
+        }
         throw error;
       }
     }
@@ -431,9 +482,9 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
 
       let total = 0;
       try {
-        const mailbox = await client.mailboxOpen(mailboxName);
+        const mailbox = await activeClient.mailboxOpen(mailboxName);
         const openedCount = mailbox && typeof mailbox === "object" ? mailbox.exists : undefined;
-        const selectedMailbox = client.mailbox;
+        const selectedMailbox = activeClient.mailbox;
         const selectedCount = selectedMailbox && typeof selectedMailbox === "object" ? selectedMailbox.exists : undefined;
         total = Number(openedCount ?? selectedCount ?? 0);
       } catch {
@@ -446,7 +497,7 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
 
       const start = Math.max(total - (fetchLimit - 1), 1);
 
-      for await (const message of client.fetch(`${start}:*`, {
+      for await (const message of activeClient.fetch(`${start}:*`, {
         uid: true,
         envelope: true,
         flags: true,
@@ -467,7 +518,7 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
         const preview = subject.replace(/\s+/g, " ").trim().slice(0, 140);
         const messageId = `${resolvedMailboxId}-${mailboxName}-${message.uid}`;
         const receivedAt = new Date(message.internalDate || Date.now()).toISOString();
-        const source = message.source ?? await fetchImapMessageSource(client, message.uid);
+        const source = message.source ?? await fetchImapMessageSource(activeClient, message.uid);
         const body = await parseRawMessageBody(source, preview, subject);
         legacyMessageIds.push(`${providerId}-${message.uid}`);
 
@@ -492,7 +543,7 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
       }
     }
 
-    await client.logout();
+    await activeClient.logout();
     const limited = sortMessagesByReceivedAtDesc(collected).slice(0, fetchLimit);
     const limitedIds = new Set(limited.map((message) => message.id));
     const limitedLegacyIds = legacyMessageIds.filter((_legacyId, index) => limitedIds.has(collected[index]?.id));
@@ -546,13 +597,17 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
         return await syncWithClient(client);
       } catch (retryError) {
         client.close();
-        const message = retryError instanceof Error ? retryError.message : "IMAP 拉取失败";
+        const preferredError =
+          outlookRefreshError && isOutlookRefreshTokenExpiredError(outlookRefreshError)
+            ? outlookRefreshError
+            : retryError;
+        const message = errorMessage(preferredError, "IMAP 拉取失败");
         updateProviderConnectionState({
           providerId,
           mailboxId,
           account: config.account,
-          status: "degraded",
-          health: "error",
+          status: isOutlookRefreshTokenExpiredError(preferredError) ? "reauth" : "degraded",
+          health: isOutlookRefreshTokenExpiredError(preferredError) ? "auth_expired" : "error",
           lastSyncedAt: new Date().toISOString(),
           lastError: message,
         });
@@ -561,13 +616,17 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
     }
 
     client.close();
-    const message = error instanceof Error ? error.message : "IMAP 拉取失败";
+    const preferredError =
+      outlookRefreshError && isOutlookRefreshTokenExpiredError(outlookRefreshError)
+        ? outlookRefreshError
+        : error;
+    const message = errorMessage(preferredError, "IMAP 拉取失败");
     updateProviderConnectionState({
       providerId,
       mailboxId,
       account: config.account,
-      status: "degraded",
-      health: "error",
+      status: isOutlookRefreshTokenExpiredError(preferredError) ? "reauth" : "degraded",
+      health: isOutlookRefreshTokenExpiredError(preferredError) ? "auth_expired" : "error",
       lastSyncedAt: new Date().toISOString(),
       lastError: message,
     });
@@ -598,7 +657,7 @@ async function refreshOutlookImapAccessToken(
   });
 
   if (!tokenResponse.ok) {
-    throw new Error(await getOutlookRefreshErrorMessage(tokenResponse, "Outlook IMAP token refresh failed"));
+    throw await getOutlookRefreshError(tokenResponse, "Outlook IMAP token refresh failed");
   }
 
   return (await tokenResponse.json()) as OAuthTokenResponse;

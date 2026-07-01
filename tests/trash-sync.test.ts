@@ -1268,6 +1268,40 @@ describe("provider sync trash folders", () => {
     expect(detail?.html).toContain("<p>Token rejected body</p>");
   });
 
+  it("keeps the invalid refresh token message when imported outlook password fallback fails", async () => {
+    vi.resetModules();
+    const passwordClient = {
+      connect: vi.fn(async () => {
+        throw new Error("Command not found");
+      }),
+      close: vi.fn(() => undefined),
+    };
+    vi.doMock("imapflow", () => ({
+      ImapFlow: vi.fn().mockImplementation(() => passwordClient),
+    }));
+
+    const providerStore = await import("@/lib/provider-store");
+    const imported = providerStore.upsertImportedOutlookMailbox({
+      account: "user@outlook.com",
+      password: "stored-password",
+      clientId: "client-one",
+      refreshToken: "refresh-one",
+    });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      error: "invalid_grant",
+      error_description: "AADSTS70000: User account is found to be in service abuse mode.",
+    }), { status: 400 }));
+
+    const providerSync = await importProviderSync();
+    await expect(providerSync.refreshProvider("outlook", imported.mailboxId, { limit: 3 }))
+      .rejects.toThrow("Outlook refresh token 已失效，请重新授权或重新导入 Outlook 账号");
+
+    const state = providerStore.getProviderFormState("outlook", imported.mailboxId);
+    expect(state.authState).toBe("reauth");
+    expect(state.syncHealth).toBe("auth_expired");
+    expect(state.lastError).toBe("Outlook refresh token 已失效，请重新授权或重新导入 Outlook 账号");
+  });
+
   it("surfaces imap hydrate failures instead of silently succeeding", async () => {
     vi.resetModules();
     const openMock = vi.fn(async () => ({ exists: 1 }));
