@@ -29,34 +29,34 @@ describe("mail fetch limit settings", () => {
   });
 
   it("returns default fetch limits when settings are missing", () => {
-    expect(getSingleSyncFetchLimit()).toBe(30);
-    expect(getBulkSyncFetchLimit()).toBe(30);
-    expect(getAutoSyncFetchLimit()).toBe(30);
+    expect(getSingleSyncFetchLimit()).toBe(3);
+    expect(getBulkSyncFetchLimit()).toBe(3);
+    expect(getAutoSyncFetchLimit()).toBe(3);
   });
 
   it("persists custom fetch limits", () => {
-    expect(setSingleSyncFetchLimit(18)).toBe(18);
-    expect(setBulkSyncFetchLimit(9)).toBe(9);
-    expect(setAutoSyncFetchLimit(6)).toBe(6);
-    expect(getSingleSyncFetchLimit()).toBe(18);
-    expect(getBulkSyncFetchLimit()).toBe(9);
-    expect(getAutoSyncFetchLimit()).toBe(6);
+    expect(setSingleSyncFetchLimit(2)).toBe(2);
+    expect(setBulkSyncFetchLimit(3)).toBe(3);
+    expect(setAutoSyncFetchLimit(1)).toBe(1);
+    expect(getSingleSyncFetchLimit()).toBe(2);
+    expect(getBulkSyncFetchLimit()).toBe(3);
+    expect(getAutoSyncFetchLimit()).toBe(1);
   });
 
   it("rejects unsupported fetch limits", () => {
-    expect(() => setSingleSyncFetchLimit(0)).toThrow("邮件获取数量必须在 1 到 200 之间");
-    expect(() => setBulkSyncFetchLimit(201)).toThrow("邮件获取数量必须在 1 到 200 之间");
-    expect(() => setAutoSyncFetchLimit(0)).toThrow("邮件获取数量必须在 1 到 200 之间");
+    expect(() => setSingleSyncFetchLimit(0)).toThrow("邮件获取数量必须在 1 到 3 之间");
+    expect(() => setBulkSyncFetchLimit(4)).toThrow("邮件获取数量必须在 1 到 3 之间");
+    expect(() => setAutoSyncFetchLimit(0)).toThrow("邮件获取数量必须在 1 到 3 之间");
   });
 
   it("uses single mailbox fetch limit for manual refresh", async () => {
-    refreshProviderMock.mockResolvedValue({ count: 12 });
-    setSingleSyncFetchLimit(12);
+    refreshProviderMock.mockResolvedValue({ count: 3 });
+    setSingleSyncFetchLimit(3);
     const { refreshProvider } = await import("@/lib/provider-sync");
 
     await refreshProvider("gmail", "gmail-box-1", { limit: getSingleSyncFetchLimit() });
 
-    expect(refreshProviderMock).toHaveBeenCalledWith("gmail", "gmail-box-1", { limit: 12 });
+    expect(refreshProviderMock).toHaveBeenCalledWith("gmail", "gmail-box-1", { limit: 3 });
   });
 
   it("persists mailbox-level fetch limit on provider config", async () => {
@@ -67,21 +67,21 @@ describe("mail fetch limit settings", () => {
       authorizationCode: "auth-code",
       imapHost: "imap.qq.com",
       imapPort: 993,
-      syncFetchLimit: 21,
+      syncFetchLimit: 3,
     });
 
-    expect(providerStore.getProviderFormState("qq", mailboxId).syncFetchLimit).toBe(21);
-    expect(providerStore.getProviderPayload("qq", mailboxId).syncFetchLimit).toBe(21);
+    expect(providerStore.getProviderFormState("qq", mailboxId).syncFetchLimit).toBe(3);
+    expect(providerStore.getProviderPayload("qq", mailboxId).syncFetchLimit).toBe(3);
   });
 
   it("uses mailbox-level fetch limit for manual refresh when configured", async () => {
-    setSingleSyncFetchLimit(12);
-    refreshProviderMock.mockResolvedValue({ count: 21 });
+    setSingleSyncFetchLimit(2);
+    refreshProviderMock.mockResolvedValue({ count: 3 });
     const providerStore = await import("@/lib/provider-store");
     const mailboxId = providerStore.saveOAuthConfig({
       providerId: "gmail",
       account: "user@gmail.com",
-      syncFetchLimit: 21,
+      syncFetchLimit: 3,
     });
 
     const routeModule = await import("@/app/api/providers/[providerId]/route");
@@ -98,12 +98,12 @@ describe("mail fetch limit settings", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(refreshProviderMock).toHaveBeenCalledWith("gmail", mailboxId, { limit: 21 });
+    expect(refreshProviderMock).toHaveBeenCalledWith("gmail", mailboxId, { limit: 3 });
   });
 
   it("uses bulk fetch limit for bulk sync runner", async () => {
-    setBulkSyncFetchLimit(7);
-    refreshProviderMock.mockResolvedValue({ count: 7 });
+    setBulkSyncFetchLimit(3);
+    refreshProviderMock.mockResolvedValue({ count: 3 });
     const syncRunner = await import("@/lib/sync-runner");
     const providerStore = await import("@/lib/provider-store");
 
@@ -119,14 +119,14 @@ describe("mail fetch limit settings", () => {
 
     await syncRunner.syncAllMailboxes();
 
-    expect(refreshProviderMock).toHaveBeenNthCalledWith(1, "gmail", expect.any(String), { limit: 7 });
-    expect(refreshProviderMock).toHaveBeenNthCalledWith(2, "outlook", expect.any(String), { limit: 7 });
+    expect(refreshProviderMock).toHaveBeenNthCalledWith(1, "gmail", expect.any(String), { limit: 3 });
+    expect(refreshProviderMock).toHaveBeenNthCalledWith(2, "outlook", expect.any(String), { limit: 3 });
   });
 
   it("uses auto fetch limit for auto sync runner", async () => {
-    setBulkSyncFetchLimit(7);
-    setAutoSyncFetchLimit(4);
-    refreshProviderMock.mockResolvedValue({ count: 4 });
+    setBulkSyncFetchLimit(3);
+    setAutoSyncFetchLimit(2);
+    refreshProviderMock.mockResolvedValue({ count: 2 });
     const syncRunner = await import("@/lib/sync-runner");
     const providerStore = await import("@/lib/provider-store");
 
@@ -142,7 +142,7 @@ describe("mail fetch limit settings", () => {
 
     await syncRunner.syncAllMailboxes({ trigger: "auto" });
 
-    expect(refreshProviderMock).toHaveBeenNthCalledWith(1, "gmail", expect.any(String), { limit: 4 });
-    expect(refreshProviderMock).toHaveBeenNthCalledWith(2, "outlook", expect.any(String), { limit: 4 });
+    expect(refreshProviderMock).toHaveBeenNthCalledWith(1, "gmail", expect.any(String), { limit: 2 });
+    expect(refreshProviderMock).toHaveBeenNthCalledWith(2, "outlook", expect.any(String), { limit: 2 });
   });
 });

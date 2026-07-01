@@ -20,14 +20,14 @@ describe("backup payloads", () => {
 
     setRefreshIntervalSeconds(300);
     setNotificationsEnabled(true);
-    setAutoSyncFetchLimit(12);
+    setAutoSyncFetchLimit(3);
     const mailboxId = saveImapConfig({
       providerId: "qq",
       account: "user@qq.com",
       authorizationCode: "auth-code",
       imapHost: "imap.qq.com",
       imapPort: 993,
-      syncFetchLimit: 21,
+      syncFetchLimit: 3,
     });
 
     upsertMessages(mailboxId, "qq", [{

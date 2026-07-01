@@ -7,9 +7,9 @@ const notificationsEnabledKey = "browser_notifications_enabled";
 const singleSyncFetchLimitKey = "single_sync_fetch_limit";
 const bulkSyncFetchLimitKey = "bulk_sync_fetch_limit";
 const autoSyncFetchLimitKey = "auto_sync_fetch_limit";
-const defaultSyncFetchLimit = 30;
+const defaultSyncFetchLimit = 3;
 const minSyncFetchLimit = 1;
-const maxSyncFetchLimit = 200;
+const maxSyncFetchLimit = 3;
 
 export type RefreshIntervalSeconds = (typeof refreshIntervalValues)[number];
 
@@ -81,7 +81,7 @@ function writeNumberSetting(key: string, value: number) {
 
 function setSyncFetchLimit(key: string, value: number) {
   if (!isSyncFetchLimit(value)) {
-    throw new Error("邮件获取数量必须在 1 到 200 之间");
+    throw new Error("邮件获取数量必须在 1 到 3 之间");
   }
 
   return writeNumberSetting(key, value);

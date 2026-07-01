@@ -17,6 +17,14 @@ function createDeferredResponse() {
   return { promise, resolve };
 }
 
+function encodeRawMessage(rawMessage: string) {
+  return Buffer.from(rawMessage)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
 describe("provider sync trash folders", () => {
   beforeEach(() => {
     const db = getDb();
@@ -60,7 +68,7 @@ describe("provider sync trash folders", () => {
     expect(listCalls[1].searchParams.get("labelIds")).toBe("SPAM");
   });
 
-  it("stores gmail summaries without fetching raw message bodies during sync", async () => {
+  it("stores gmail full message bodies during sync", async () => {
     const providerStore = await import("@/lib/provider-store");
     const mailboxId = providerStore.saveOAuthConfig({ providerId: "gmail", account: "user@gmail.com" });
     providerStore.updateProviderConnectionState({
@@ -78,19 +86,32 @@ describe("provider sync trash folders", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ emailAddress: "user@gmail.com" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ messages: [{ id: "gmail-msg-1", threadId: "thread-1" }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ messages: [] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "gmail-msg-1", labelIds: ["UNREAD"], snippet: "Snippet preview", internalDate: "1780000000000", raw: "dGVzdA==" }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: "gmail-msg-1",
+        labelIds: ["UNREAD"],
+        snippet: "Snippet preview",
+        internalDate: "1780000000000",
+        raw: encodeRawMessage([
+          "From: Sender <sender@example.com>",
+          "Subject: Full Gmail body",
+          "Content-Type: text/html; charset=utf-8",
+          "",
+          "<p>Full Gmail body</p>",
+        ].join("\r\n")),
+      }), { status: 200 }));
 
     const providerSync = await importProviderSync();
     await providerSync.refreshProvider("gmail", mailboxId, { limit: 10 });
 
     const detail = getMessageDetail(`${mailboxId}-gmail-msg-1`);
     expect(detail).toBeDefined();
-    expect(detail!.text).toBe("Snippet preview");
+    expect(detail!.subject).toBe("Full Gmail body");
+    expect(detail!.html).toContain("<p>Full Gmail body</p>");
 
     const rawFetchCalls = fetchMock.mock.calls
       .map((call) => String(call[0]))
       .filter((url) => url.includes("/messages/") && url.includes("format=raw"));
-    expect(rawFetchCalls).toHaveLength(0);
+    expect(rawFetchCalls).toHaveLength(1);
   });
 
   it("limits gmail total synced messages across labels to the requested count", async () => {
@@ -135,30 +156,30 @@ describe("provider sync trash folders", () => {
         }), { status: 200 }));
       }
 
-      if (url.includes("/messages/gmail-msg-1?format=metadata")) {
+      if (url.includes("/messages/gmail-msg-1?format=raw")) {
         return Promise.resolve(new Response(JSON.stringify({
           id: "gmail-msg-1",
           snippet: "One",
           internalDate: "1780000000000",
-          payload: { headers: [{ name: "Subject", value: "One" }] },
+          raw: encodeRawMessage("Subject: One\r\n\r\nOne full body"),
         }), { status: 200 }));
       }
 
-      if (url.includes("/messages/gmail-msg-2?format=metadata")) {
+      if (url.includes("/messages/gmail-msg-2?format=raw")) {
         return Promise.resolve(new Response(JSON.stringify({
           id: "gmail-msg-2",
           snippet: "Two",
           internalDate: "1780000001000",
-          payload: { headers: [{ name: "Subject", value: "Two" }] },
+          raw: encodeRawMessage("Subject: Two\r\n\r\nTwo full body"),
         }), { status: 200 }));
       }
 
-      if (url.includes("/messages/gmail-msg-3?format=metadata")) {
+      if (url.includes("/messages/gmail-msg-3?format=raw")) {
         return Promise.resolve(new Response(JSON.stringify({
           id: "gmail-msg-3",
           snippet: "Three",
           internalDate: "1780000002000",
-          payload: { headers: [{ name: "Subject", value: "Three" }] },
+          raw: encodeRawMessage("Subject: Three\r\n\r\nThree full body"),
         }), { status: 200 }));
       }
 
@@ -170,10 +191,10 @@ describe("provider sync trash folders", () => {
 
     expect(result).toEqual({ count: 3 });
     expect(providerStore.listMessages().filter((message) => message.mailboxId === mailboxId)).toHaveLength(3);
-    const metadataFetches = fetchMock.mock.calls
+    const rawFetches = fetchMock.mock.calls
       .map((call) => String(call[0]))
-      .filter((url) => url.includes("?format=metadata"));
-    expect(metadataFetches).toHaveLength(3);
+      .filter((url) => url.includes("?format=raw"));
+    expect(rawFetches).toHaveLength(3);
   });
 
   it("starts multiple gmail summary fetches without waiting for each previous message", async () => {
@@ -217,12 +238,12 @@ describe("provider sync trash folders", () => {
         return Promise.resolve(new Response(JSON.stringify({ messages: [] }), { status: 200 }));
       }
 
-      if (url.includes("/messages/gmail-msg-1?format=metadata")) {
+      if (url.includes("/messages/gmail-msg-1?format=raw")) {
         startedSummaryIds.push("gmail-msg-1");
         return firstSummary.promise;
       }
 
-      if (url.includes("/messages/gmail-msg-2?format=metadata")) {
+      if (url.includes("/messages/gmail-msg-2?format=raw")) {
         startedSummaryIds.push("gmail-msg-2");
         return secondSummary.promise;
       }
@@ -242,14 +263,14 @@ describe("provider sync trash folders", () => {
       labelIds: ["UNREAD"],
       snippet: "First summary",
       internalDate: "1780000000000",
-      payload: { headers: [{ name: "Subject", value: "First subject" }] },
+      raw: encodeRawMessage("Subject: First subject\r\n\r\nFirst full body"),
     }), { status: 200 }));
     secondSummary.resolve(new Response(JSON.stringify({
       id: "gmail-msg-2",
       labelIds: [],
       snippet: "Second summary",
       internalDate: "1780000001000",
-      payload: { headers: [{ name: "Subject", value: "Second subject" }] },
+      raw: encodeRawMessage("Subject: Second subject\r\n\r\nSecond full body"),
     }), { status: 200 }));
 
     await refreshPromise;
@@ -288,7 +309,7 @@ describe("provider sync trash folders", () => {
     expect(urls[1]).toContain("/mailFolders/junkemail/messages");
   });
 
-  it("requests outlook list summaries without body payload during sync", async () => {
+  it("requests outlook list messages with body payload during sync", async () => {
     const providerStore = await import("@/lib/provider-store");
     const mailboxId = providerStore.saveOAuthConfig({ providerId: "outlook", account: "user@outlook.com", tenantId: "common" });
     providerStore.updateProviderConnectionState({
@@ -317,11 +338,11 @@ describe("provider sync trash folders", () => {
 
     expect(outlookListCalls).toHaveLength(2);
     outlookListCalls.forEach((url) => {
-      expect(url.searchParams.get("$select")).toBe("id,subject,bodyPreview,receivedDateTime,from,isRead,hasAttachments");
+      expect(url.searchParams.get("$select")).toBe("id,subject,bodyPreview,receivedDateTime,from,isRead,hasAttachments,body");
     });
   });
 
-  it("stores outlook summaries without eager attachment detail calls during sync", async () => {
+  it("stores outlook full message bodies without eager attachment detail calls during sync", async () => {
     const providerStore = await import("@/lib/provider-store");
     const mailboxId = providerStore.saveOAuthConfig({ providerId: "outlook", account: "user@outlook.com", tenantId: "common" });
     providerStore.updateProviderConnectionState({
@@ -347,6 +368,7 @@ describe("provider sync trash folders", () => {
             from: { emailAddress: { address: "sender@example.com", name: "Sender" } },
             isRead: false,
             hasAttachments: true,
+            body: { contentType: "html", content: "<p>Full Outlook body</p>" },
           },
         ],
       }), { status: 200 }))
@@ -359,6 +381,7 @@ describe("provider sync trash folders", () => {
     const detail = getMessageDetail(`${mailboxId}-outlook-msg-1`);
     expect(detail).toBeDefined();
     expect(detail!.text).toBe("Preview text");
+    expect(detail!.html).toContain("<p>Full Outlook body</p>");
     expect(detail!.hasAttachments).toBe(true);
     expect(detail!.attachments).toEqual([]);
 
@@ -404,8 +427,51 @@ describe("provider sync trash folders", () => {
     expect(providerStore.listMessages().filter((message) => message.mailboxId === mailboxId)).toHaveLength(3);
   });
 
+  it("caps outlook sync to three messages even when a larger limit is requested", async () => {
+    const providerStore = await import("@/lib/provider-store");
+    const mailboxId = providerStore.saveOAuthConfig({ providerId: "outlook", account: "user@outlook.com", tenantId: "common" });
+    providerStore.updateProviderConnectionState({
+      providerId: "outlook",
+      mailboxId,
+      account: "user@outlook.com",
+      status: "connected",
+      health: "healthy",
+      lastSyncedAt: new Date().toISOString(),
+      tokenPayload: { refreshToken: "refresh-token" },
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "token", expires_in: 3600, token_type: "Bearer" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ userPrincipalName: "user@outlook.com" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        value: [
+          { id: "outlook-msg-1", subject: "One", bodyPreview: "One", receivedDateTime: "2026-06-05T00:00:03.000Z", from: { emailAddress: { address: "a@example.com" } }, isRead: false, hasAttachments: false, body: { contentType: "html", content: "<p>One</p>" } },
+          { id: "outlook-msg-2", subject: "Two", bodyPreview: "Two", receivedDateTime: "2026-06-05T00:00:02.000Z", from: { emailAddress: { address: "b@example.com" } }, isRead: false, hasAttachments: false, body: { contentType: "html", content: "<p>Two</p>" } },
+          { id: "outlook-msg-3", subject: "Three", bodyPreview: "Three", receivedDateTime: "2026-06-05T00:00:01.000Z", from: { emailAddress: { address: "c@example.com" } }, isRead: false, hasAttachments: false, body: { contentType: "html", content: "<p>Three</p>" } },
+        ],
+      }), { status: 200 }));
+
+    const providerSync = await importProviderSync();
+    const result = await providerSync.refreshProvider("outlook", mailboxId, { limit: 10 });
+
+    expect(result).toEqual({ count: 3 });
+    expect(providerStore.listMessages().filter((message) => message.mailboxId === mailboxId)).toHaveLength(3);
+    const outlookListCalls = fetchMock.mock.calls
+      .map((call) => call[0])
+      .filter((value) => value instanceof URL) as URL[];
+    expect(outlookListCalls[0].searchParams.get("$top")).toBe("3");
+  });
+
   it("refreshes imported outlook accounts through imap by default", async () => {
     vi.resetModules();
+    const rawMessage = [
+      "From: Sender <sender@example.com>",
+      "Subject: Imported IMAP subject",
+      "Date: Fri, 05 Jun 2026 00:00:00 +0000",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>Imported IMAP full body</p>",
+    ].join("\r\n");
     const openMock = vi.fn(async (mailboxName: string) => ({ exists: mailboxName === "INBOX" ? 1 : 0 }));
     const connectMock = vi.fn(async () => undefined);
     const logoutMock = vi.fn(async () => undefined);
@@ -417,6 +483,7 @@ describe("provider sync trash folders", () => {
           envelope: { from: [{ address: "sender@example.com" }], subject: "Imported IMAP subject" },
           flags: new Set(),
           internalDate: new Date("2026-06-05T00:00:00.000Z"),
+          source: Buffer.from(rawMessage),
         };
       }
       return items();
@@ -464,6 +531,15 @@ describe("provider sync trash folders", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/oauth2/v2.0/token");
     const detail = providerStore.listMessages().find((message) => message.mailboxId === imported.mailboxId);
     expect(detail?.subject).toBe("Imported IMAP subject");
+    const hydratedDetail = providerStore.getMessageDetail(`${imported.mailboxId}-INBOX-42`);
+    expect(hydratedDetail?.html).toContain("<p>Imported IMAP full body</p>");
+    expect(fetchMockImap).toHaveBeenCalledWith("1:*", {
+      uid: true,
+      envelope: true,
+      flags: true,
+      internalDate: true,
+      source: true,
+    });
   });
 
   it("tries imap inbox and junk mailboxes", async () => {

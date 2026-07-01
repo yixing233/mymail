@@ -9,8 +9,8 @@ interface RefreshProviderOptions {
 }
 
 function normalizeFetchLimit(limit?: number) {
-  if (typeof limit !== "number" || !Number.isFinite(limit)) return 30;
-  return Math.max(1, Math.min(200, Math.trunc(limit)));
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return 3;
+  return Math.max(1, Math.min(3, Math.trunc(limit)));
 }
 
 const providerLabels: Record<ProviderId, string> = {
@@ -120,6 +120,24 @@ function normalizeParsedHtml(html: string | false | undefined | null, fallbackTe
   }
 
   return buildFallbackHtml(fallbackText, subject);
+}
+
+function buildTextFromHtml(html: string, fallbackText: string) {
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || fallbackText;
+}
+
+async function parseRawMessageBody(source: Buffer | undefined, fallbackText: string, subject: string) {
+  if (!source) {
+    return {
+      text: fallbackText,
+      html: buildFallbackHtml(fallbackText, subject),
+    };
+  }
+
+  const parsed = await simpleParser(source);
+  const text = parsed.text || (typeof parsed.html === "string" ? buildTextFromHtml(parsed.html, fallbackText) : fallbackText);
+  const html = normalizeParsedHtml(parsed.html, text, subject);
+  return { parsed, text, html };
 }
 
 function buildAttachmentList(
@@ -256,7 +274,7 @@ async function verifyImap(providerId: ProviderId, mailboxId?: string) {
   }
 
 
-  const client = new ImapFlow({
+  let client = new ImapFlow({
     host: payload.imapHost,
     port: payload.imapPort,
     secure: true,
@@ -327,7 +345,7 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
   const fetchLimit = normalizeFetchLimit(options?.limit);
   const syncMailboxes = providerImapSyncMailboxes[providerId] || defaultImapSyncMailboxes;
 
-  const client = new ImapFlow({
+  let client = new ImapFlow({
     host: payload.imapHost,
     port: payload.imapPort,
     secure: true,
@@ -340,7 +358,26 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
   });
 
   try {
-    await client.connect();
+    try {
+      await client.connect();
+    } catch (error) {
+      if (providerId !== "outlook" || !accessToken || !password) {
+        throw error;
+      }
+
+      client.close();
+      client = new ImapFlow({
+        host: payload.imapHost,
+        port: payload.imapPort,
+        secure: true,
+        auth: {
+          user: config.account,
+          pass: password,
+        },
+        logger: false,
+      });
+      await client.connect();
+    }
 
     const collected: Array<MailMessage & Pick<MailDetail, "text" | "html">> = [];
     const legacyMessageIds: string[] = [];
@@ -369,6 +406,7 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
         envelope: true,
         flags: true,
         internalDate: true,
+        source: true,
       })) {
         if (collected.length >= fetchLimit) {
           break;
@@ -385,6 +423,7 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
         const preview = subject.replace(/\s+/g, " ").trim().slice(0, 140);
         const messageId = `${resolvedMailboxId}-${mailboxName}-${message.uid}`;
         const receivedAt = new Date(message.internalDate || Date.now()).toISOString();
+        const body = await parseRawMessageBody(message.source, preview, subject);
         legacyMessageIds.push(`${providerId}-${message.uid}`);
 
         collected.push({
@@ -402,8 +441,8 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
           hasAttachments: false,
           tags: [],
           attachments: [],
-          text: "",
-          html: "",
+          text: body.text,
+          html: body.html,
         });
       }
     }
@@ -566,9 +605,9 @@ async function refreshGoogle(providerId: ProviderId, mailboxId?: string, options
     }),
   ).slice(0, fetchLimit);
 
-  const summaries = await mapWithConcurrency(summaryTargets, gmailSummaryConcurrency, async ({ item, labelId }) => {
-    const summaryResponse = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+  const messages = await mapWithConcurrency(summaryTargets, gmailSummaryConcurrency, async ({ item, labelId }) => {
+    const messageResponse = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.id)}?format=raw`,
       {
         headers: {
           Authorization: `Bearer ${token.access_token}`,
@@ -576,19 +615,21 @@ async function refreshGoogle(providerId: ProviderId, mailboxId?: string, options
       },
     );
 
-    if (!summaryResponse.ok) {
+    if (!messageResponse.ok) {
       throw new Error("Google message fetch failed");
     }
 
-    const message = (await summaryResponse.json()) as GmailMessageResponse;
+    const message = (await messageResponse.json()) as GmailMessageResponse;
     return { labelId, item, message };
   });
 
-  for (const { labelId, item, message } of summaries) {
-    const headers = message.payload?.headers;
-    const subject = getHeaderValue(headers, "Subject") || "(无主题)";
-    const from = getHeaderValue(headers, "From") || profile.emailAddress;
-    const preview = (message.snippet || subject).replace(/\s+/g, " ").trim().slice(0, 140);
+  for (const { labelId, item, message } of messages) {
+    const parsed = message.raw ? await simpleParser(decodeBase64Url(message.raw)) : null;
+    const subject = parsed?.subject || "(无主题)";
+    const from = parsed?.from?.text || profile.emailAddress;
+    const bodyText = parsed?.text || message.snippet || subject;
+    const html = normalizeParsedHtml(parsed?.html, bodyText, subject);
+    const preview = (message.snippet || bodyText || subject).replace(/\s+/g, " ").trim().slice(0, 140);
     const receivedAt = new Date(message.internalDate ? Number(message.internalDate) : Date.now()).toISOString();
     const messageId = `${resolvedMailboxId}-${item.id}`;
 
@@ -607,8 +648,8 @@ async function refreshGoogle(providerId: ProviderId, mailboxId?: string, options
       hasAttachments: false,
       tags: [],
       attachments: [],
-      text: message.snippet || "",
-      html: "",
+      text: bodyText,
+      html,
     });
   }
 
@@ -714,7 +755,7 @@ async function refreshOutlook(providerId: ProviderId, mailboxId?: string, option
     listUrl.searchParams.set("$orderby", "receivedDateTime desc");
     listUrl.searchParams.set(
       "$select",
-      "id,subject,bodyPreview,receivedDateTime,from,isRead,hasAttachments",
+      "id,subject,bodyPreview,receivedDateTime,from,isRead,hasAttachments,body",
     );
 
     const listResponse = await fetch(listUrl, {
@@ -761,6 +802,10 @@ async function refreshOutlook(providerId: ProviderId, mailboxId?: string, option
       const from = fromName && fromAddress ? `"${fromName}" <${fromAddress}>` : fromAddress || fromName || account;
       const subject = message.subject || "(无主题)";
       const preview = (message.bodyPreview || subject).replace(/\s+/g, " ").trim().slice(0, 140);
+      const text = message.bodyPreview || subject;
+      const html = message.body?.contentType === "html" && message.body.content
+        ? message.body.content
+        : buildFallbackHtml(text, subject);
       const messageId = `${resolvedMailboxId}-${message.id}`;
 
       collected.push({
@@ -778,8 +823,8 @@ async function refreshOutlook(providerId: ProviderId, mailboxId?: string, option
         hasAttachments: Boolean(message.hasAttachments),
         tags: [],
         attachments: [],
-        text: preview,
-        html: "",
+        text,
+        html,
       });
     }
   }

@@ -301,12 +301,12 @@ export function ProvidersPanel({ providers }: { providers: MailProviderGroup[] }
   const [backupExporting, setBackupExporting] = useState(false);
   const [backupImportingMode, setBackupImportingMode] = useState<"replace" | "merge" | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [singleSyncFetchLimit, setSingleSyncFetchLimit] = useState(30);
-  const [bulkSyncFetchLimit, setBulkSyncFetchLimit] = useState(30);
-  const [autoSyncFetchLimit, setAutoSyncFetchLimit] = useState(30);
-  const [draftSingleSyncFetchLimit, setDraftSingleSyncFetchLimit] = useState("30");
-  const [draftBulkSyncFetchLimit, setDraftBulkSyncFetchLimit] = useState("30");
-  const [draftAutoSyncFetchLimit, setDraftAutoSyncFetchLimit] = useState("30");
+  const [singleSyncFetchLimit, setSingleSyncFetchLimit] = useState(3);
+  const [bulkSyncFetchLimit, setBulkSyncFetchLimit] = useState(3);
+  const [autoSyncFetchLimit, setAutoSyncFetchLimit] = useState(3);
+  const [draftSingleSyncFetchLimit, setDraftSingleSyncFetchLimit] = useState("3");
+  const [draftBulkSyncFetchLimit, setDraftBulkSyncFetchLimit] = useState("3");
+  const [draftAutoSyncFetchLimit, setDraftAutoSyncFetchLimit] = useState("3");
   const [syncFetchLimitSaving, setSyncFetchLimitSaving] = useState(false);
   const [autoRefreshRunning, setAutoRefreshRunning] = useState(false);
   const [autoRefreshNextRunAt, setAutoRefreshNextRunAt] = useState<string | null>(null);
@@ -1240,8 +1240,8 @@ export function ProvidersPanel({ providers }: { providers: MailProviderGroup[] }
     const trimmed = String(value).trim();
     const nextValue = Number(trimmed);
 
-    if (!Number.isInteger(nextValue) || nextValue < 1 || nextValue > 200) {
-      toast.error("邮件获取数量必须在 1 到 200 之间");
+    if (!Number.isInteger(nextValue) || nextValue < 1 || nextValue > 3) {
+      toast.error("邮件获取数量必须在 1 到 3 之间");
       return;
     }
 
@@ -1298,18 +1298,18 @@ export function ProvidersPanel({ providers }: { providers: MailProviderGroup[] }
     const nextBulk = Number(draftBulkSyncFetchLimit.trim());
     const nextAuto = Number(draftAutoSyncFetchLimit.trim());
 
-    if (!Number.isInteger(nextSingle) || nextSingle < 1 || nextSingle > 200) {
-      toast.error("单个邮箱邮件获取数量必须在 1 到 200 之间");
+    if (!Number.isInteger(nextSingle) || nextSingle < 1 || nextSingle > 3) {
+      toast.error("单个邮箱邮件获取数量必须在 1 到 3 之间");
       return;
     }
 
-    if (!Number.isInteger(nextBulk) || nextBulk < 1 || nextBulk > 200) {
-      toast.error("批量邮箱邮件获取数量必须在 1 到 200 之间");
+    if (!Number.isInteger(nextBulk) || nextBulk < 1 || nextBulk > 3) {
+      toast.error("批量邮箱邮件获取数量必须在 1 到 3 之间");
       return;
     }
 
-    if (!Number.isInteger(nextAuto) || nextAuto < 1 || nextAuto > 200) {
-      toast.error("自动拉取邮件数量必须在 1 到 200 之间");
+    if (!Number.isInteger(nextAuto) || nextAuto < 1 || nextAuto > 3) {
+      toast.error("自动拉取邮件数量必须在 1 到 3 之间");
       return;
     }
 
@@ -2011,7 +2011,7 @@ export function ProvidersPanel({ providers }: { providers: MailProviderGroup[] }
                     <input
                       type="number"
                       min={1}
-                      max={200}
+                      max={3}
                       value={configState.syncFetchLimit ?? ""}
                       onChange={(event) => {
                         const rawValue = event.target.value.trim();
@@ -2377,7 +2377,7 @@ export function ProvidersPanel({ providers }: { providers: MailProviderGroup[] }
                         <input
                           type="number"
                           min={1}
-                          max={200}
+                          max={3}
                           value={draftSingleSyncFetchLimit}
                           disabled={settingsLoading || syncFetchLimitSaving}
                           onChange={(event) => setDraftSingleSyncFetchLimit(event.target.value)}
@@ -2390,7 +2390,7 @@ export function ProvidersPanel({ providers }: { providers: MailProviderGroup[] }
                         <input
                           type="number"
                           min={1}
-                          max={200}
+                          max={3}
                           value={draftBulkSyncFetchLimit}
                           disabled={settingsLoading || syncFetchLimitSaving}
                           onChange={(event) => setDraftBulkSyncFetchLimit(event.target.value)}
@@ -2403,7 +2403,7 @@ export function ProvidersPanel({ providers }: { providers: MailProviderGroup[] }
                         <input
                           type="number"
                           min={1}
-                          max={200}
+                          max={3}
                           value={draftAutoSyncFetchLimit}
                           disabled={settingsLoading || syncFetchLimitSaving}
                           onChange={(event) => setDraftAutoSyncFetchLimit(event.target.value)}

@@ -26,7 +26,7 @@ const oauthConfigSchema = z.object({
   tenantId: z.string().optional(),
   imapHost: z.string().optional(),
   imapPort: z.coerce.number().int().positive().optional(),
-  syncFetchLimit: z.coerce.number().int().min(1).max(200).optional(),
+  syncFetchLimit: z.coerce.number().int().min(1).max(3).optional(),
 });
 
 const imapConfigSchema = z.object({
@@ -35,7 +35,7 @@ const imapConfigSchema = z.object({
   authorizationCode: z.string().optional(),
   imapHost: z.string().min(1, "缺少 IMAP Host"),
   imapPort: z.coerce.number().int().positive(),
-  syncFetchLimit: z.coerce.number().int().min(1).max(200).optional(),
+  syncFetchLimit: z.coerce.number().int().min(1).max(3).optional(),
 });
 
 export async function GET(
@@ -185,7 +185,7 @@ export async function POST(
       }
 
       const result = await refreshProvider(providerId as ProviderId, mailboxId, {
-        limit: provider.syncFetchLimit ?? getSingleSyncFetchLimit(),
+        limit: Math.min(provider.syncFetchLimit ?? getSingleSyncFetchLimit(), 3),
       });
       return NextResponse.json({
         provider: getProviderFormState(providerId as ProviderId, mailboxId),

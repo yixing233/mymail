@@ -23,9 +23,9 @@ import {
 const settingsSchema = z.object({
   refreshInterval: z.coerce.number().int().nonnegative().optional(),
   notificationsEnabled: z.boolean().optional(),
-  singleSyncFetchLimit: z.coerce.number().int().positive().optional(),
-  bulkSyncFetchLimit: z.coerce.number().int().positive().optional(),
-  autoSyncFetchLimit: z.coerce.number().int().positive().optional(),
+  singleSyncFetchLimit: z.coerce.number().int().min(1).max(3).optional(),
+  bulkSyncFetchLimit: z.coerce.number().int().min(1).max(3).optional(),
+  autoSyncFetchLimit: z.coerce.number().int().min(1).max(3).optional(),
 });
 
 const settingsActionSchema = z.discriminatedUnion("action", [
