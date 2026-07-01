@@ -36,12 +36,44 @@ interface OAuthTokenResponse {
   token_type: string;
 }
 
-async function getOAuthErrorMessage(response: Response, fallback: string) {
-  const payload = await response.json().catch(() => null) as
-    | { error?: string; error_description?: string; error_codes?: number[] }
-    | null;
+interface OAuthErrorPayload {
+  error?: string;
+  error_description?: string;
+  error_codes?: number[];
+}
+
+const outlookRefreshTokenExpiredMessage = "Outlook refresh token 已失效，请重新授权或重新导入 Outlook 账号";
+
+function formatOAuthErrorMessage(payload: OAuthErrorPayload | null, fallback: string) {
   const details = [payload?.error, payload?.error_description].filter(Boolean).join(": ");
-  return details || `${fallback} (${response.status})`;
+  return details || fallback;
+}
+
+function isOutlookRefreshTokenExpired(payload: OAuthErrorPayload | null) {
+  const details = [payload?.error, payload?.error_description, ...(payload?.error_codes || []).map(String)]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return (
+    details.includes("invalid_grant") ||
+    details.includes("aadsts70000") ||
+    details.includes("refresh token") ||
+    details.includes("revoked") ||
+    details.includes("expired")
+  );
+}
+
+async function getOAuthErrorMessage(response: Response, fallback: string) {
+  const payload = await response.json().catch(() => null) as OAuthErrorPayload | null;
+  return formatOAuthErrorMessage(payload, `${fallback} (${response.status})`);
+}
+
+async function getOutlookRefreshErrorMessage(response: Response, fallback: string) {
+  const payload = await response.json().catch(() => null) as OAuthErrorPayload | null;
+  if (isOutlookRefreshTokenExpired(payload)) {
+    return outlookRefreshTokenExpiredMessage;
+  }
+  return formatOAuthErrorMessage(payload, `${fallback} (${response.status})`);
 }
 
 interface GmailProfileResponse {
@@ -566,7 +598,7 @@ async function refreshOutlookImapAccessToken(
   });
 
   if (!tokenResponse.ok) {
-    throw new Error(await getOAuthErrorMessage(tokenResponse, "Outlook IMAP token refresh failed"));
+    throw new Error(await getOutlookRefreshErrorMessage(tokenResponse, "Outlook IMAP token refresh failed"));
   }
 
   return (await tokenResponse.json()) as OAuthTokenResponse;
@@ -772,7 +804,7 @@ async function refreshOutlook(providerId: ProviderId, mailboxId?: string, option
   });
 
   if (!tokenResponse.ok) {
-    const message = await getOAuthErrorMessage(tokenResponse, "Outlook refresh failed");
+    const message = await getOutlookRefreshErrorMessage(tokenResponse, "Outlook refresh failed");
     updateProviderConnectionState({
       providerId,
       mailboxId,

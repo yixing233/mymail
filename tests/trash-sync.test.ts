@@ -342,6 +342,34 @@ describe("provider sync trash folders", () => {
     });
   });
 
+  it("marks outlook oauth mailbox reauth with a friendly message when refresh token is invalid", async () => {
+    const providerStore = await import("@/lib/provider-store");
+    const mailboxId = providerStore.saveOAuthConfig({ providerId: "outlook", account: "user@outlook.com", tenantId: "common" });
+    providerStore.updateProviderConnectionState({
+      providerId: "outlook",
+      mailboxId,
+      account: "user@outlook.com",
+      status: "connected",
+      health: "healthy",
+      lastSyncedAt: new Date().toISOString(),
+      tokenPayload: { refreshToken: "expired-refresh-token" },
+    });
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      error: "invalid_grant",
+      error_description: "AADSTS70000: User account is found to be in service abuse mode.",
+    }), { status: 400 }));
+
+    const providerSync = await importProviderSync();
+    await expect(providerSync.refreshProvider("outlook", mailboxId, { limit: 3 }))
+      .rejects.toThrow("Outlook refresh token 已失效，请重新授权或重新导入 Outlook 账号");
+
+    const state = providerStore.getProviderFormState("outlook", mailboxId);
+    expect(state.authState).toBe("reauth");
+    expect(state.syncHealth).toBe("auth_expired");
+    expect(state.lastError).toBe("Outlook refresh token 已失效，请重新授权或重新导入 Outlook 账号");
+  });
+
   it("stores outlook full message bodies without eager attachment detail calls during sync", async () => {
     const providerStore = await import("@/lib/provider-store");
     const mailboxId = providerStore.saveOAuthConfig({ providerId: "outlook", account: "user@outlook.com", tenantId: "common" });
