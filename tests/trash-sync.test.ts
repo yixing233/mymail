@@ -1010,7 +1010,7 @@ describe("provider sync trash folders", () => {
     };
     const passwordClient = {
       connect: vi.fn(async () => undefined),
-      mailboxOpen: vi.fn(async () => ({ exists: 1 })),
+      mailboxOpen: vi.fn(async (mailboxName: string) => ({ exists: mailboxName === "INBOX" ? 1 : 0 })),
       fetchOne: vi.fn(async () => ({
         uid: 42,
         source: Buffer.from(rawMessage),
@@ -1078,6 +1078,98 @@ describe("provider sync trash folders", () => {
     expect(passwordClient.fetchOne).toHaveBeenCalled();
     const detail = providerStore.getMessageDetail(messageId);
     expect(detail?.html).toContain("<p>Fallback body loaded.</p>");
+  });
+
+  it("retries imported outlook imap sync with password when oauth fetch commands are rejected", async () => {
+    vi.resetModules();
+    const rawMessage = [
+      "From: Sender <sender@example.com>",
+      "Subject: Password fallback sync",
+      "Date: Fri, 05 Jun 2026 00:00:00 +0000",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>Password fallback body</p>",
+    ].join("\r\n");
+    const oauthClient = {
+      connect: vi.fn(async () => undefined),
+      mailboxOpen: vi.fn(async () => ({ exists: 1 })),
+      fetch: vi.fn(() => {
+        throw new Error("Command not found");
+      }),
+      logout: vi.fn(async () => undefined),
+      close: vi.fn(() => undefined),
+      mailbox: { exists: 1 },
+    };
+    const passwordClient = {
+      connect: vi.fn(async () => undefined),
+      mailboxOpen: vi.fn(async (mailboxName: string) => ({ exists: mailboxName === "INBOX" ? 1 : 0 })),
+      fetch: vi.fn((range: string) => {
+        async function* items() {
+          if (range === "1:*") {
+            yield {
+              uid: 42,
+              envelope: { from: [{ address: "sender@example.com" }], subject: "Password fallback sync" },
+              flags: new Set(),
+              internalDate: new Date("2026-06-05T00:00:00.000Z"),
+            };
+          }
+
+          if (range === "42") {
+            yield {
+              uid: 42,
+              source: Buffer.from(rawMessage),
+            };
+          }
+        }
+        return items();
+      }),
+      logout: vi.fn(async () => undefined),
+      close: vi.fn(() => undefined),
+      mailbox: { exists: 1 },
+    };
+    const imapFlowMock = vi.fn()
+      .mockImplementationOnce(() => oauthClient)
+      .mockImplementationOnce(() => passwordClient);
+
+    vi.doMock("imapflow", () => ({
+      ImapFlow: imapFlowMock,
+    }));
+
+    const providerStore = await import("@/lib/provider-store");
+    const imported = providerStore.upsertImportedOutlookMailbox({
+      account: "user@outlook.com",
+      password: "stored-password",
+      clientId: "client-one",
+      refreshToken: "refresh-one",
+    });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      access_token: "imap-token",
+      expires_in: 3600,
+      token_type: "Bearer",
+    }), { status: 200 }));
+
+    const providerSync = await importProviderSync();
+    const result = await providerSync.refreshProvider("outlook", imported.mailboxId, { limit: 3 });
+
+    expect(result).toEqual({ count: 1 });
+    expect(imapFlowMock).toHaveBeenCalledTimes(2);
+    expect(imapFlowMock.mock.calls[0]?.[0].auth).toMatchObject({
+      user: "user@outlook.com",
+      accessToken: "imap-token",
+    });
+    expect(imapFlowMock.mock.calls[1]?.[0].auth).toMatchObject({
+      user: "user@outlook.com",
+      pass: "stored-password",
+    });
+    expect(oauthClient.fetch).toHaveBeenCalled();
+    expect(passwordClient.fetch).toHaveBeenCalledWith("1:*", {
+      uid: true,
+      envelope: true,
+      flags: true,
+      internalDate: true,
+    });
+    const detail = providerStore.getMessageDetail(`${imported.mailboxId}-INBOX-42`);
+    expect(detail?.html).toContain("<p>Password fallback body</p>");
   });
 
   it("surfaces imap hydrate failures instead of silently succeeding", async () => {

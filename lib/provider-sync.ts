@@ -358,43 +358,24 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
     throw new Error("IMAP 配置不完整");
   }
 
+  const imapHost = payload.imapHost;
+  const imapPort = payload.imapPort;
   const fetchLimit = normalizeFetchLimit(options?.limit);
   const syncMailboxes = providerImapSyncMailboxes[providerId] || defaultImapSyncMailboxes;
 
-  let client = new ImapFlow({
-    host: payload.imapHost,
-    port: payload.imapPort,
+  const createClient = (useAccessToken: boolean) => new ImapFlow({
+    host: imapHost,
+    port: imapPort,
     secure: true,
     auth: {
       user: config.account,
-      pass: accessToken ? undefined : password,
-      accessToken,
+      pass: useAccessToken ? undefined : password,
+      accessToken: useAccessToken ? accessToken : undefined,
     },
     logger: false,
   });
 
-  try {
-    try {
-      await client.connect();
-    } catch (error) {
-      if (providerId !== "outlook" || !accessToken || !password) {
-        throw error;
-      }
-
-      client.close();
-      client = new ImapFlow({
-        host: payload.imapHost,
-        port: payload.imapPort,
-        secure: true,
-        auth: {
-          user: config.account,
-          pass: password,
-        },
-        logger: false,
-      });
-      await client.connect();
-    }
-
+  async function syncWithClient(activeClient: ImapFlow) {
     const collected: Array<MailMessage & Pick<MailDetail, "text" | "html">> = [];
     const legacyMessageIds: string[] = [];
     const seenMessageIds = new Set<string>();
@@ -490,7 +471,51 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
         : undefined,
     });
     return { count: limited.length };
+  }
+
+  let usingAccessToken = Boolean(accessToken);
+  let client = createClient(usingAccessToken);
+
+  try {
+    try {
+      await client.connect();
+    } catch (error) {
+      if (providerId !== "outlook" || !usingAccessToken || !password) {
+        throw error;
+      }
+
+      client.close();
+      usingAccessToken = false;
+      client = createClient(false);
+      await client.connect();
+    }
+
+    return await syncWithClient(client);
   } catch (error) {
+    if (providerId === "outlook" && usingAccessToken && password) {
+      client.close();
+      usingAccessToken = false;
+      client = createClient(false);
+
+      try {
+        await client.connect();
+        return await syncWithClient(client);
+      } catch (retryError) {
+        client.close();
+        const message = retryError instanceof Error ? retryError.message : "IMAP 拉取失败";
+        updateProviderConnectionState({
+          providerId,
+          mailboxId,
+          account: config.account,
+          status: "degraded",
+          health: "error",
+          lastSyncedAt: new Date().toISOString(),
+          lastError: message,
+        });
+        throw new Error(message);
+      }
+    }
+
     client.close();
     const message = error instanceof Error ? error.message : "IMAP 拉取失败";
     updateProviderConnectionState({
