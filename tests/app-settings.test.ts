@@ -74,6 +74,32 @@ describe("mail fetch limit settings", () => {
     expect(providerStore.getProviderPayload("qq", mailboxId).syncFetchLimit).toBe(3);
   });
 
+  it("clamps legacy mailbox-level fetch limits submitted by the provider form", async () => {
+    const providerStore = await import("@/lib/provider-store");
+    const routeModule = await import("@/app/api/providers/[providerId]/route");
+    const request = new Request("http://localhost/api/providers/outlook", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mode: "oauth",
+        account: "user@outlook.com",
+        tenantId: "common",
+        syncFetchLimit: 30,
+      }),
+    });
+
+    const response = await routeModule.PUT(request as never, {
+      params: Promise.resolve({ providerId: "outlook" }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.syncFetchLimit).toBe(3);
+    expect(providerStore.getProviderPayload("outlook", body.mailboxId).syncFetchLimit).toBe(3);
+  });
+
   it("uses mailbox-level fetch limit for manual refresh when configured", async () => {
     setSingleSyncFetchLimit(2);
     refreshProviderMock.mockResolvedValue({ count: 3 });

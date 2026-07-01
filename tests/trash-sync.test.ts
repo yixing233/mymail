@@ -476,15 +476,23 @@ describe("provider sync trash folders", () => {
     const connectMock = vi.fn(async () => undefined);
     const logoutMock = vi.fn(async () => undefined);
     const closeMock = vi.fn(() => undefined);
-    const fetchMockImap = vi.fn((_range: string) => {
+    const fetchMockImap = vi.fn((range: string) => {
       async function* items() {
-        yield {
-          uid: 42,
-          envelope: { from: [{ address: "sender@example.com" }], subject: "Imported IMAP subject" },
-          flags: new Set(),
-          internalDate: new Date("2026-06-05T00:00:00.000Z"),
-          source: Buffer.from(rawMessage),
-        };
+        if (range === "1:*") {
+          yield {
+            uid: 42,
+            envelope: { from: [{ address: "sender@example.com" }], subject: "Imported IMAP subject" },
+            flags: new Set(),
+            internalDate: new Date("2026-06-05T00:00:00.000Z"),
+          };
+        }
+
+        if (range === "42") {
+          yield {
+            uid: 42,
+            source: Buffer.from(rawMessage),
+          };
+        }
       }
       return items();
     });
@@ -538,8 +546,93 @@ describe("provider sync trash folders", () => {
       envelope: true,
       flags: true,
       internalDate: true,
-      source: true,
     });
+    expect(fetchMockImap).toHaveBeenCalledWith("42", {
+      source: true,
+    }, { uid: true });
+  });
+
+  it("does not fail imported outlook sync when batched imap source fetch is rejected", async () => {
+    vi.resetModules();
+    const rawMessage = [
+      "From: Sender <sender@example.com>",
+      "Subject: Imported IMAP source fallback",
+      "Date: Fri, 05 Jun 2026 00:00:00 +0000",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>Fallback source body</p>",
+    ].join("\r\n");
+    const connectMock = vi.fn(async () => undefined);
+    const logoutMock = vi.fn(async () => undefined);
+    const closeMock = vi.fn(() => undefined);
+    const fetchMockImap = vi.fn((range: string, query: { source?: boolean }) => {
+      if (range === "1:*" && query.source) {
+        throw new Error("Command failed");
+      }
+
+      async function* items() {
+        if (range === "1:*") {
+          yield {
+            uid: 42,
+            envelope: { from: [{ address: "sender@example.com" }], subject: "Imported IMAP source fallback" },
+            flags: new Set(),
+            internalDate: new Date("2026-06-05T00:00:00.000Z"),
+          };
+        }
+
+        if (range === "42") {
+          yield {
+            uid: 42,
+            source: Buffer.from(rawMessage),
+          };
+        }
+      }
+      return items();
+    });
+    const imapFlowMock = vi.fn().mockImplementation(() => {
+      const client = {
+        connect: connectMock,
+        mailboxOpen: vi.fn(async (mailboxName: string) => {
+          const exists = mailboxName === "INBOX" ? 1 : 0;
+          client.mailbox.exists = exists;
+          return { exists };
+        }),
+        fetch: fetchMockImap,
+        logout: logoutMock,
+        close: closeMock,
+        mailbox: { exists: 0 },
+      };
+      return client;
+    });
+
+    vi.doMock("imapflow", () => ({
+      ImapFlow: imapFlowMock,
+    }));
+
+    const providerStore = await import("@/lib/provider-store");
+    const imported = providerStore.upsertImportedOutlookMailbox({
+      account: "user@outlook.com",
+      password: "pass-one",
+      clientId: "client-one",
+      refreshToken: "refresh-one",
+    });
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      access_token: "imap-token",
+      expires_in: 3600,
+      token_type: "Bearer",
+    }), { status: 200 }));
+
+    const providerSync = await importProviderSync();
+    const result = await providerSync.refreshProvider("outlook", imported.mailboxId, { limit: 10 });
+
+    expect(result).toEqual({ count: 1 });
+    const hydratedDetail = providerStore.getMessageDetail(`${imported.mailboxId}-INBOX-42`);
+    expect(hydratedDetail?.html).toContain("<p>Fallback source body</p>");
+    expect(fetchMockImap).not.toHaveBeenCalledWith("1:*", expect.objectContaining({ source: true }));
+    expect(fetchMockImap).toHaveBeenCalledWith("42", {
+      source: true,
+    }, { uid: true });
   });
 
   it("tries imap inbox and junk mailboxes", async () => {

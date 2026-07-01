@@ -20,13 +20,15 @@ const providerSchema = z.object({
   action: z.enum(["refresh", "clear", "retry", "disconnect", "reconnect"]),
 });
 
+const syncFetchLimitSchema = z.coerce.number().int().min(1).transform((value) => Math.min(value, 3));
+
 const oauthConfigSchema = z.object({
   mode: z.literal("oauth"),
   account: z.string().email("请输入有效邮箱"),
   tenantId: z.string().optional(),
   imapHost: z.string().optional(),
   imapPort: z.coerce.number().int().positive().optional(),
-  syncFetchLimit: z.coerce.number().int().min(1).max(3).optional(),
+  syncFetchLimit: syncFetchLimitSchema.optional(),
 });
 
 const imapConfigSchema = z.object({
@@ -35,7 +37,7 @@ const imapConfigSchema = z.object({
   authorizationCode: z.string().optional(),
   imapHost: z.string().min(1, "缺少 IMAP Host"),
   imapPort: z.coerce.number().int().positive(),
-  syncFetchLimit: z.coerce.number().int().min(1).max(3).optional(),
+  syncFetchLimit: syncFetchLimitSchema.optional(),
 });
 
 export async function GET(

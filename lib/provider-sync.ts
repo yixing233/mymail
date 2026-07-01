@@ -140,6 +140,22 @@ async function parseRawMessageBody(source: Buffer | undefined, fallbackText: str
   return { parsed, text, html };
 }
 
+async function fetchImapMessageSource(client: ImapFlow, uid: number | string | undefined) {
+  if (uid === undefined || uid === null) {
+    return undefined;
+  }
+
+  try {
+    for await (const message of client.fetch(String(uid), { source: true }, { uid: true })) {
+      return message.source;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
 function buildAttachmentList(
   messageId: string,
   attachments: Array<{ id?: string; name?: string; size?: number }>,
@@ -388,25 +404,28 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
         break;
       }
 
+      let total = 0;
       try {
-        await client.mailboxOpen(mailboxName);
+        const mailbox = await client.mailboxOpen(mailboxName);
+        const openedCount = mailbox && typeof mailbox === "object" ? mailbox.exists : undefined;
+        const selectedMailbox = client.mailbox;
+        const selectedCount = selectedMailbox && typeof selectedMailbox === "object" ? selectedMailbox.exists : undefined;
+        total = Number(openedCount ?? selectedCount ?? 0);
       } catch {
         continue;
       }
 
-      const total = client.mailbox ? client.mailbox.exists : 0;
-      const start = Math.max(total - (fetchLimit - 1), 1);
-
-      if (total <= 0) {
+      if (!Number.isFinite(total) || total <= 0) {
         continue;
       }
+
+      const start = Math.max(total - (fetchLimit - 1), 1);
 
       for await (const message of client.fetch(`${start}:*`, {
         uid: true,
         envelope: true,
         flags: true,
         internalDate: true,
-        source: true,
       })) {
         if (collected.length >= fetchLimit) {
           break;
@@ -423,7 +442,8 @@ async function fetchImapMessages(providerId: ProviderId, mailboxId?: string, opt
         const preview = subject.replace(/\s+/g, " ").trim().slice(0, 140);
         const messageId = `${resolvedMailboxId}-${mailboxName}-${message.uid}`;
         const receivedAt = new Date(message.internalDate || Date.now()).toISOString();
-        const body = await parseRawMessageBody(message.source, preview, subject);
+        const source = message.source ?? await fetchImapMessageSource(client, message.uid);
+        const body = await parseRawMessageBody(source, preview, subject);
         legacyMessageIds.push(`${providerId}-${message.uid}`);
 
         collected.push({
